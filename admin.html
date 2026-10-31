@@ -1,0 +1,114 @@
+<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fyra Lika – V10.0</title><style>
+:root{font-family:system-ui,sans-serif;color:#232323;background:#f6f5f2}*{box-sizing:border-box}body{margin:0;padding:24px}main{max-width:980px;margin:auto}section{background:white;border:1px solid #ddd;border-radius:14px;padding:22px;margin:18px 0}h1{margin-bottom:4px}input,textarea,select,button{font:inherit}input,textarea,select{width:100%;padding:10px;margin:5px 0 12px;border:1px solid #bbb;border-radius:7px}textarea{min-height:135px;font-family:ui-monospace,monospace}button{cursor:pointer;border:0;border-radius:8px;padding:10px 15px;background:#292929;color:white;margin:4px 6px 4px 0}button.secondary{background:#e9e9e9;color:#222}button.danger{background:#a52222}button:disabled{opacity:.5;cursor:default}.row{display:flex;gap:14px;flex-wrap:wrap}.row>*{flex:1;min-width:190px}.hidden{display:none}.muted{color:#626262}.item{padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;gap:10px}.item button{flex-shrink:0}.badge{font-size:12px;border-radius:6px;background:#f2e4bb;padding:4px 7px}.ok{background:#ccead0}.group{padding:12px;background:#f8f8f8;border-radius:10px;margin:10px 0}.group:nth-child(1){border-left:6px solid #e5c64d}.group:nth-child(2){border-left:6px solid #76b38b}.group:nth-child(3){border-left:6px solid #83b2d9}.group:nth-child(4){border-left:6px solid #b89bd4}#notice{white-space:pre-wrap;position:sticky;top:0;background:#fff3cd;border-radius:8px;padding:12px;z-index:2}#notice:empty{display:none}a{color:#245a9c} .preview-card{border:1px solid #d8d8d8;border-radius:12px;padding:18px;margin:20px 0;background:#fff}.preview-card:nth-child(even){background:#fafaf7}.preview-card>h3{margin-top:0;border-bottom:1px solid #ddd;padding-bottom:10px}#aiPreviewActions{margin:14px 0} </style></head><body><main><a href="index.html">← Till spelet</a><h1>🧩 Fyra Lika V10.0</h1><p class="muted">Databas, inloggning och publicering utan JSON-uppladdning. AI-generering direkt i administrationen via säker serverfunktion.</p><p id="notice" role="status"></p>
+<section id="login"><h2>🔐 Administratörsinloggning</h2><label>E-post<input id="email" type="email" autocomplete="username"></label><label>Lösenord<input id="password" type="password" autocomplete="current-password"></label><button id="signin">Logga in</button><p class="muted">Kontot måste skapas i Supabase och läggas till i admin_users. Att bara vara inloggad ger inte administratörsbehörighet.</p></section>
+<div id="app" class="hidden"><section><div class="row"><h2>📅 Pussel i databasen</h2><div><button id="refresh" class="secondary">Uppdatera lista</button><button id="signout" class="secondary">Logga ut</button></div></div><div id="list"></div></section>
+<section><h2>✏️ Skapa och redigera</h2><div class="row"><label>Datum<input id="date" type="date"></label><label>Pusselnamn<input id="name" maxlength="100"></label></div><div id="groups"></div><button id="check" class="secondary">Kontrollera</button><button id="draft">Spara utkast</button><button id="approve">Godkänn och publicera</button><button id="remove" class="danger">Radera valt datum</button><p class="muted">Godkända pussel blir tillgängliga på sitt datum. Språklig granskning gör du själv.</p></section>
+<section><h2>🤖 Generera ett expertpussel</h2><p class="muted">Generatorn väljer verifierade ord och söker treordsfällor, korskopplingar och variation mellan pussel. Välj 1–10 pussel. I diagnostiskt läge sparas inget; alla testpussel visas under varandra och kan kopieras tillsammans.</p><div class="row"><label>Första datum<input id="aiStart" type="date"></label><label>Antal pussel<select id="aiCount"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option></select></label></div><label style="display:block"><input id="diagnostic" type="checkbox" style="width:auto;margin-right:8px" checked>Diagnostiskt testläge – visa underkända pussel och granskningsfel (sparas aldrig)</label><button id="generate">🤖 Generera pussel</button><button id="stopGenerate" class="secondary" disabled>Avbryt efter aktuell omgång</button><p id="aiProgress" role="status" class="muted"></p><div id="aiPreviewActions" class="hidden"><button type="button" id="copyAllPreviews" class="secondary">📋 Kopiera alla testpussel</button><span id="copyPreviewStatus" class="muted" role="status"></span></div><div id="aiPreview"></div><p class="muted">Kräver att Edge Function <code>generate-puzzles</code> är installerad. Den kontrollerade ordbanken använder inte OpenAI.</p></section>
+<section><h2>📥 Importera gamla pussel / AI-genererade</h2><p>Importera <code>puzzles.json</code>, V6-säkerhetskopia eller en array med objekt som innehåller <code>date</code> och <code>groups</code>. Importerade pussel sparas som <b>utkast</b> för granskning. Befintliga datum hoppas över.</p><input id="file" type="file" accept=".json,application/json"><textarea id="json" placeholder="Klistra in JSON här"></textarea><button id="import">Importera som utkast</button><button id="backup" class="secondary">Ladda ner databasbackup</button></section></div>
+</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="config.js"></script><script>
+'use strict';const $=id=>document.getElementById(id),note=s=>$('notice').textContent=s;
+let db,records=[],active=null;
+if(!window.FYRA_CONFIG?.url||!window.FYRA_CONFIG?.publishableKey||!window.supabase){note('Konfigurera config.js med Supabase Project URL och publishable key först.')}else{db=window.supabase.createClient(FYRA_CONFIG.url,FYRA_CONFIG.publishableKey);db.auth.getUser().then(({data})=>{if(data.user)enter()});}
+const norm=s=>String(s??'').trim();
+function validate(p){const errors=[];if(!p||!Array.isArray(p.groups)||p.groups.length!==4)return ['Exakt fyra grupper krävs.'];const all=[];for(let i=0;i<4;i++){const g=p.groups[i];if(!norm(g.name)||/^(gul|grön|blå|lila)$/i.test(norm(g.name)))errors.push('Grupp '+(i+1)+' saknar ett beskrivande kategorinamn');if(!Array.isArray(g.words)||g.words.length!==4){errors.push('Grupp '+(i+1)+' behöver fyra ord');continue}for(const w of g.words){if(!norm(w))errors.push('Tomt ord');all.push(norm(w).toLocaleLowerCase('sv-SE'))}}if(new Set(all).size!==16)errors.push('Orden måste vara unika.');return errors}
+function readForm(){return {name:norm($('name').value)||'Dagens pussel',groups:Array.from({length:4},(_,i)=>({name:norm($('cat'+i).value),words:Array.from({length:4},(_,j)=>norm($('w'+i+j).value)),explanation:norm($('ex'+i).value),word_explanations:Array.from({length:4},(_,j)=>norm($('wx'+i+j).value))}))}}
+function fill(p){$('name').value=p?.name||'';for(let i=0;i<4;i++){$('cat'+i).value=p?.groups?.[i]?.name||'';$('ex'+i).value=p?.groups?.[i]?.explanation||'';for(let j=0;j<4;j++){$('w'+i+j).value=p?.groups?.[i]?.words?.[j]||'';$('wx'+i+j).value=p?.groups?.[i]?.word_explanations?.[j]||''}}}
+function buildForm(){for(let i=0;i<4;i++){const box=document.createElement('div');box.className='group';const title=document.createElement('h3');title.textContent=['🟨 Gul','🟩 Grön','🟦 Blå','🟪 Lila'][i];box.append(title);const cat=document.createElement('input');cat.id='cat'+i;cat.placeholder='Kategorins namn';box.append(cat);const row=document.createElement('div');row.className='row';for(let j=0;j<4;j++){const inp=document.createElement('input');inp.id='w'+i+j;inp.placeholder='Ord '+(j+1);row.append(inp)}box.append(row);const ex=document.createElement('textarea');ex.id='ex'+i;ex.placeholder='Varför hör orden ihop?';box.append(ex);const details=document.createElement('div');details.className='row';for(let j=0;j<4;j++){const inp=document.createElement('input');inp.id='wx'+i+j;inp.placeholder='Förklaring till ord '+(j+1);details.append(inp)}box.append(details);$('groups').append(box)}}buildForm();$('date').value=new Date().toLocaleDateString('sv-SE',{year:'numeric',month:'2-digit',day:'2-digit'});
+async function enter(){if(!db)return;const {data,error}=await db.from('puzzles').select('puzzle_date,name,groups,status').order('puzzle_date');if(error){note('Inloggningen lyckades men databasåtkomst misslyckades: '+error.message);return}records=data||[];$('login').classList.add('hidden');$('app').classList.remove('hidden');note('');renderList()}
+function renderList(){const root=$('list');root.replaceChildren();if(!records.length)root.textContent='Inga pussel ännu.';for(const r of records){const el=document.createElement('div');el.className='item';const label=document.createElement('span');label.textContent=r.puzzle_date+' · '+r.name+' ';const badge=document.createElement('span');badge.className='badge '+(r.status==='approved'?'ok':'');badge.textContent=r.status==='approved'?'Godkänd':'Utkast';label.append(badge);const btn=document.createElement('button');btn.className='secondary';btn.textContent='Öppna';btn.onclick=()=>{$('date').value=r.puzzle_date;active=r.puzzle_date;fill(r);note('Redigerar '+r.puzzle_date)};el.append(label,btn);root.append(el)}}
+$('signin').onclick=async()=>{if(!db)return;const {error}=await db.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error){note(error.message);return}await enter()};$('signout').onclick=async()=>{await db.auth.signOut();location.reload()};$('refresh').onclick=enter;
+$('check').onclick=()=>{const e=validate(readForm());note(e.length?'⚠️ '+e.join('; '):'✓ Teknisk kontroll godkänd. Kontrollera även ordsamband och alternativa lösningar.')};
+async function save(status){const date=$('date').value,p=readForm(),errors=validate(p);if(!date||errors.length){note('⚠️ '+(errors.join('; ')||'Välj datum'));return}if(status==='approved'&&!confirm('Har du granskat ord, stavning, samband och alternativa lösningar?'))return;const {error}=await db.from('puzzles').upsert({puzzle_date:date,name:p.name,groups:p.groups,status,updated_at:new Date().toISOString()},{onConflict:'puzzle_date'});if(error){note('Kunde inte spara: '+error.message);return}note('✓ Sparat som '+(status==='approved'?'godkänt pussel':'utkast')+'.');await enter()}
+$('draft').onclick=()=>save('draft');$('approve').onclick=()=>save('approved');$('remove').onclick=async()=>{const date=$('date').value;if(!date||!confirm('Radera pusslet för '+date+' permanent?'))return;const {error}=await db.from('puzzles').delete().eq('puzzle_date',date);if(error){note(error.message);return}fill(null);note('Raderat '+date);await enter()};
+$('file').onchange=async e=>{const file=e.target.files[0];if(file)$('json').value=await file.text()};
+function normalizeImport(v){let items=[];if(v?.entries&&typeof v.entries==='object'){items=Object.entries(v.entries).map(([date,x])=>({date,puzzle:x.puzzle||x}))}else if(Array.isArray(v)){items=v.map(x=>({date:x.date||x.puzzle_date,puzzle:x.puzzle||x}))}else if(v&&typeof v==='object'){items=Object.entries(v).map(([date,x])=>({date,puzzle:x.puzzle||x}))}return items}
+$('import').onclick=async()=>{let v;try{v=JSON.parse($('json').value)}catch{note('Ogiltig JSON.');return}const items=normalizeImport(v),existing=new Set(records.map(r=>r.puzzle_date));let valid=[],skipped=0;for(const {date,puzzle} of items){if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||validate(puzzle).length||existing.has(date)){skipped++;continue}existing.add(date);valid.push({puzzle_date:date,name:norm(puzzle.name)||'Dagens pussel',groups:puzzle.groups.map(g=>({name:norm(g.name),words:g.words.map(norm),explanation:norm(g.explanation),word_explanations:g.word_explanations||[]})),status:'draft'})}if(!valid.length){note('Inget nytt giltigt pussel. Överhoppade: '+skipped);return}if(!confirm('Importera '+valid.length+' pussel som utkast?'))return;let saved=0;for(let i=0;i<valid.length;i+=100){const {error}=await db.from('puzzles').insert(valid.slice(i,i+100));if(error){note('Importen avbröts efter '+saved+': '+error.message);await enter();return}saved+=Math.min(100,valid.length-i)}await enter();note('✓ Importerade '+saved+' utkast. Hoppade över '+skipped+'.')};
+let previewItems=[];
+function renderPreview(){
+ const root=$('aiPreview');root.replaceChildren();
+ $('aiPreviewActions').classList.toggle('hidden',previewItems.length===0);
+ previewItems.forEach(({date,result},index)=>{
+  const card=document.createElement('article');card.className='preview-card';
+  const heading=document.createElement('h3');heading.textContent=`Pussel ${index+1} av ${previewItems.length} · ${date}`;card.append(heading);
+  showPreview(result,card);
+  root.append(card);
+ });
+}
+function showPreview(result,box){
+ const p=result?.puzzle;if(!p)return;
+ const title=document.createElement('h4');title.textContent='🔬 Diagnostiskt pussel – INTE SPARAT ('+(result.stage||'test')+')';box.append(title);
+ if(result.review){const rating=document.createElement('p');rating.textContent='Språk: '+(result.review.language_score??'–')+'/5 · Spel: '+(result.review.gameplay_score??'–')+'/5';box.append(rating)}
+ for(const g of p.groups||[]){const el=document.createElement('div');el.className='group';const h=document.createElement('strong');h.textContent=g.name+' — '+(g.words||[]).join(' · ');el.append(h);
+ const ex=document.createElement('p');ex.textContent=g.explanation||'';el.append(ex);
+ (g.words||[]).forEach((w,i)=>{const d=document.createElement('div');d.textContent=w+': '+(g.word_explanations?.[i]||'');el.append(d)});box.append(el)}
+}
+function previewPlainText(){return previewItems.map(({date,result},i)=>{
+ const p=result.puzzle;
+ const lines=[`### 🔬 Diagnostiskt pussel ${i+1} – ${date} – INTE SPARAT (${result.stage||'test'})`];
+ if(result.review)lines.push(`Språk: ${result.review.language_score??'–'}/5 · Spel: ${result.review.gameplay_score??'–'}/5`);
+ for(const g of p.groups||[]){lines.push('',`**${g.name} — ${(g.words||[]).join(' · ')}**`,g.explanation||'');(g.words||[]).forEach((w,j)=>lines.push(`${w}: ${g.word_explanations?.[j]||''}`));}
+ return lines.join('\n');
+ }).join('\n\n'+'─'.repeat(48)+'\n\n');}
+$('copyAllPreviews').onclick=async()=>{
+ const content=previewPlainText();if(!content)return;
+ try{await navigator.clipboard.writeText(content);$('copyPreviewStatus').textContent='✓ Alla '+previewItems.length+' pussel kopierade!';}
+ catch(e){const ta=document.createElement('textarea');ta.value=content;ta.style.width='100%';ta.style.height='140px';$('aiPreviewActions').append(ta);ta.select();$('copyPreviewStatus').textContent='Markera och kopiera texten (⌘C/Ctrl+C).';}
+};
+let stopRequested=false;
+$('aiStart').value=new Date().toLocaleDateString('sv-SE',{year:'numeric',month:'2-digit',day:'2-digit'});
+$('stopGenerate').onclick=()=>{stopRequested=true;$('aiProgress').textContent='Avbryter efter pågående omgång…'};
+const addDays=(day,n)=>{const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
+$('generate').onclick=async()=>{
+ if(!db)return;
+ const start=$('aiStart').value,total=Number($('aiCount').value),diagnostic=$('diagnostic').checked;
+ if(!Number.isInteger(total)||total<1||total>10){note('Välj mellan 1 och 10 pussel.');return}
+ previewItems=[];renderPreview();$('copyPreviewStatus').textContent='';
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(start)){note('Välj startdatum.');return}
+ if(!confirm('Generera '+total+' pussel från ordbanken? '+(diagnostic?'TESTLÄGE: Ingenting sparas.':'Godkända pussel sparas som utkast.')+''))return;
+ $('generate').disabled=true;$('stopGenerate').disabled=false;stopRequested=false;
+ let saved=0,skipped=0,errors=[],created=0,generatedAttempts=0,pluralUsed=0;const excludedSignatures=[],excludedCategories=[],priorWords=[],priorFamilies=[];
+ try{
+  const existing=new Set(records.map(r=>r.puzzle_date));
+  // Saved puzzles form a rolling 30-day memory, including drafts.
+  const recentGroups=records.flatMap(r=>(Array.isArray(r.groups)?r.groups:[]).filter(g=>Array.isArray(g.words)&&g.words.length===4).map(g=>({date:r.puzzle_date,signature:g.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')})));
+  const dates=Array.from({length:total},(_,i)=>addDays(start,i)).filter(d=>!existing.has(d));
+  skipped=total-dates.length;
+  for(let i=0;i<dates.length&&!stopRequested;i+=1){
+   const chunk=dates.slice(i,i+1);
+   $('aiProgress').textContent='Genererar pussel '+(i+1)+' av '+dates.length+' – '+created+' skapade, '+saved+' sparade…';
+   const {data,error}=await db.functions.invoke('generate-puzzles',{body:{count:1,diagnostic,target_date:chunk[0],recent_groups:recentGroups,exclude_signatures:excludedSignatures,exclude_categories:excludedCategories.slice(-8),prior_words:priorWords,prior_families:priorFamilies,batch_total:total,batch_index:generatedAttempts,plural_used:pluralUsed}});
+   if(error){
+    let detail=data;
+    try { if(error.context && typeof error.context.json==='function') detail=await error.context.json(); } catch(_){}
+    errors.push('Generering misslyckades (HTTP '+(error.context?.status||'okänd')+'): '+(detail?.error||error.message));
+    if(detail?.attempt_history)errors.push(detail.attempt_history.map(x=>'Försök '+x.attempt+' (språk '+(x.language_score??'–')+'/5, spel '+(x.gameplay_score??'–')+'/5, blindtest '+(x.solver_groups??'–')+'/4 grupper): '+x.issues.join('; ')).join(' | '));
+    break;
+   }
+   if(diagnostic&&data?.preview?.puzzle&&!data?.puzzles?.length){previewItems.push({date:chunk[0],result:data.preview});renderPreview();}
+   if(data?.rejected){
+    errors.push(data.error||'Alla tre förslagen underkändes.');
+    if(data.attempt_history)errors.push(data.attempt_history.map(x=>'Försök '+x.attempt+' (språk '+(x.language_score??'–')+'/5, spel '+(x.gameplay_score??'–')+'/5, blindtest '+(x.solver_groups??'–')+'/4 grupper): '+x.issues.join('; ')).join(' | '));
+    break;
+   }
+   if(data?.error){errors.push(data.error);break}
+   const puzzles=data?.puzzles;
+   if(!Array.isArray(puzzles)||puzzles.length!==chunk.length){errors.push('AI svarade med fel antal pussel.');break}
+   const rows=[];
+   for(let j=0;j<chunk.length;j++){
+    const puzzle=puzzles[j],issues=validate(puzzle);
+    if(issues.length){errors.push(chunk[j]+': '+issues.join(', '));continue}
+    rows.push({puzzle_date:chunk[j],name:norm(puzzle.name)||'Dagens pussel',groups:puzzle.groups,status:'draft'});
+   }
+   if(rows.length){for(const row of rows)for(const group of row.groups)recentGroups.push({date:row.puzzle_date,signature:group.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});generatedAttempts++;if(data.plural_included)pluralUsed++;created+=rows.length;if(data.signature)excludedSignatures.push(data.signature);if(Array.isArray(data.category_ids))excludedCategories.push(...data.category_ids);if(Array.isArray(data.words))priorWords.push(...data.words);if(Array.isArray(data.family_ids))priorFamilies.push(...data.family_ids);}
+   if(diagnostic){if(rows.length){previewItems.push({date:chunk[0],result:{puzzle:puzzles[0],stage:'Godkänd · kvalitet '+(data.quality_score??'–')+'/100 · treordsfällor '+(data.triple_matches??0),review:data.review}});renderPreview();}continue;}
+   if(rows.length){
+    const {error:saveError}=await db.from('puzzles').insert(rows);
+    if(saveError){errors.push('Kunde inte spara omgången: '+saveError.message);break}
+    saved+=rows.length;
+   }
+  }
+ }catch(e){errors.push(String(e.message||e))}
+ finally{$('generate').disabled=false;$('stopGenerate').disabled=true;await enter();$('aiProgress').textContent='Klart: '+created+' skapade pussel, '+saved+' nya utkast, '+skipped+' upptagna datum.'+(stopRequested?' Avbrutet.':'')+(errors.length?' Problem: '+errors.join(' | '):'')}
+};
+$('backup').onclick=()=>{const obj={format:'fyra-lika-v7',entries:Object.fromEntries(records.map(r=>[r.puzzle_date,{status:r.status,puzzle:{name:r.name,groups:r.groups}}]))};const url=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='fyra-lika-v7-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),3000)};
+</script></body></html>
