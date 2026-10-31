@@ -1,7 +1,6 @@
-// Fyra Lika – publik konfiguration för testmiljön.
-// Endast Supabase Project URL och publishable/anon key får anges här.
-// Lägg ALDRIG service_role-nyckel, lösenord eller andra hemligheter här.
+// Fyra Lika – publik Supabase-konfiguration.
+// Endast projekt-URL och publishable key. Åtkomst till tabeller skyddas med RLS.
 window.FYRA_CONFIG = {
-  url: '',
-  publishableKey: ''
+  url: 'https://zorjivkgchengwlwjtmc.supabase.co',
+  publishableKey: 'sb_publishable_oMFno8Fb4XLyJ9Uxmq1yGQ_4vNdIqc4'
 };
