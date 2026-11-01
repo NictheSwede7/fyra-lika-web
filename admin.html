@@ -91,6 +91,8 @@ $('generate').onclick=async()=>{
    if(diagnostic&&data?.preview?.puzzle&&!data?.puzzles?.length){previewItems.push({date:chunk[0],result:data.preview});renderPreview();}
    if(data?.rejected){
     errors.push(data.error||'Alla tre förslagen underkändes.');
+    if(data.diagnostics)errors.push('Diagnostik '+chunk[0]+': '+JSON.stringify(data.diagnostics));
+    if(diagnostic)continue;
     if(data.attempt_history)errors.push(data.attempt_history.map(x=>'Försök '+x.attempt+' (språk '+(x.language_score??'–')+'/5, spel '+(x.gameplay_score??'–')+'/5, blindtest '+(x.solver_groups??'–')+'/4 grupper): '+x.issues.join('; ')).join(' | '));
     break;
    }
