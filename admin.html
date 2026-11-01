@@ -70,7 +70,11 @@ $('generate').onclick=async()=>{
  try{
   const existing=new Set(records.map(r=>r.puzzle_date));
   // Saved puzzles form a rolling 30-day memory, including drafts.
+  const historyKey='fyra-lika-diagnostics-v133';
+  let diagnosticHistory=[];
+  try {diagnosticHistory=JSON.parse(localStorage.getItem(historyKey)||'[]');if(!Array.isArray(diagnosticHistory))diagnosticHistory=[];}catch(_){diagnosticHistory=[];}
   const recentGroups=records.flatMap(r=>(Array.isArray(r.groups)?r.groups:[]).filter(g=>Array.isArray(g.words)&&g.words.length===4).map(g=>({date:r.puzzle_date,name:String(g.name||''),signature:g.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')})));
+  for(const item of diagnosticHistory)for(const g of (item.groups||[]))if(Array.isArray(g.words)&&g.words.length===4)recentGroups.push({date:item.date,name:String(g.name||''),signature:g.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});
   const dates=Array.from({length:total},(_,i)=>addDays(start,i)).filter(d=>!existing.has(d));
   skipped=total-dates.length;
   for(let i=0;i<dates.length&&!stopRequested;i+=1){
@@ -100,6 +104,7 @@ $('generate').onclick=async()=>{
     rows.push({puzzle_date:chunk[j],name:norm(puzzle.name)||'Dagens pussel',groups:puzzle.groups,status:'draft'});
    }
    if(rows.length){for(const row of rows)for(const group of row.groups)recentGroups.push({date:row.puzzle_date,signature:group.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});generatedAttempts++;if(data.plural_included)pluralUsed++;created+=rows.length;if(data.signature)excludedSignatures.push(data.signature);if(Array.isArray(data.category_ids))excludedCategories.push(...data.category_ids);if(Array.isArray(data.words))priorWords.push(...data.words);if(Array.isArray(data.family_ids))priorFamilies.push(...data.family_ids);}
+   if(diagnostic&&rows.length){diagnosticHistory.push({date:chunk[0],groups:puzzles[0].groups});diagnosticHistory=diagnosticHistory.slice(-150);try{localStorage.setItem(historyKey,JSON.stringify(diagnosticHistory));}catch(_){}for(const g of puzzles[0].groups)recentGroups.push({date:chunk[0],name:String(g.name||''),signature:g.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});}
    if(diagnostic){if(rows.length){previewItems.push({date:chunk[0],result:{puzzle:puzzles[0],stage:'Godkänd · kvalitet '+(data.quality_score??'–')+'/100 · treordsfällor '+(data.triple_matches??0),review:data.review}});renderPreview();}continue;}
    if(rows.length){
     const {error:saveError}=await db.from('puzzles').insert(rows);
