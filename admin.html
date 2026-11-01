@@ -85,7 +85,7 @@ $('generate').onclick=async()=>{
  if(!/^\d{4}-\d{2}-\d{2}$/.test(start)){note('Välj startdatum.');return}
  if(!confirm('Generera '+total+' pussel från ordbanken? '+(diagnostic?'TESTLÄGE: Ingenting sparas.':'Godkända pussel sparas som utkast.')+''))return;
  $('generate').disabled=true;$('stopGenerate').disabled=false;stopRequested=false;
- let saved=0,skipped=0,errors=[],created=0,generatedAttempts=0,pluralUsed=0;const excludedSignatures=[],excludedCategories=[],priorWords=[],priorFamilies=[];
+ let saved=0,skipped=0,errors=[],created=0,generatedAttempts=0,pluralUsed=0;const excludedSignatures=[],excludedCategories=[],priorWords=[],priorFamilies=[],priorDecoys=[];
  try{
   const existing=new Set(records.map(r=>r.puzzle_date));
   // Saved puzzles form a rolling 30-day memory, including drafts.
@@ -99,7 +99,7 @@ $('generate').onclick=async()=>{
   for(let i=0;i<dates.length&&!stopRequested;i+=1){
    const chunk=dates.slice(i,i+1);
    $('aiProgress').textContent='Genererar pussel '+(i+1)+' av '+dates.length+' – '+created+' skapade, '+saved+' sparade…';
-   const {data,error}=await db.functions.invoke('generate-puzzles',{body:{count:1,diagnostic,target_date:chunk[0],recent_groups:recentGroups,exclude_signatures:excludedSignatures,exclude_categories:excludedCategories.slice(-120),prior_words:priorWords,prior_families:priorFamilies,batch_total:total,batch_index:generatedAttempts,plural_used:pluralUsed}});
+   const {data,error}=await db.functions.invoke('generate-puzzles',{body:{count:1,diagnostic,target_date:chunk[0],recent_groups:recentGroups,exclude_signatures:excludedSignatures,exclude_categories:excludedCategories.slice(-120),prior_words:priorWords,prior_families:priorFamilies,prior_decoys:priorDecoys.slice(-100),batch_total:total,batch_index:generatedAttempts,plural_used:pluralUsed}});
    if(error){
     let detail=data;
     try { if(error.context && typeof error.context.json==='function') detail=await error.context.json(); } catch(_){}
@@ -124,7 +124,7 @@ $('generate').onclick=async()=>{
     if(issues.length){errors.push(chunk[j]+': '+issues.join(', '));continue}
     rows.push({puzzle_date:chunk[j],name:norm(puzzle.name)||'Dagens pussel',groups:puzzle.groups,status:'draft'});
    }
-   if(rows.length){for(const row of rows)for(const group of row.groups)recentGroups.push({date:row.puzzle_date,signature:group.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});generatedAttempts++;if(data.plural_included)pluralUsed++;created+=rows.length;if(data.signature)excludedSignatures.push(data.signature);if(Array.isArray(data.category_ids))excludedCategories.push(...data.category_ids);if(Array.isArray(data.words))priorWords.push(...data.words);if(Array.isArray(data.family_ids))priorFamilies.push(...data.family_ids);}
+   if(rows.length){for(const row of rows)for(const group of row.groups)recentGroups.push({date:row.puzzle_date,signature:group.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});generatedAttempts++;if(data.plural_included)pluralUsed++;created+=rows.length;if(data.signature)excludedSignatures.push(data.signature);if(Array.isArray(data.category_ids))excludedCategories.push(...data.category_ids);if(Array.isArray(data.words))priorWords.push(...data.words);if(Array.isArray(data.family_ids))priorFamilies.push(...data.family_ids);if(Array.isArray(data.decoy_ids))priorDecoys.push(...data.decoy_ids);}
    if(diagnostic&&rows.length){diagnosticHistory.push({date:chunk[0],groups:puzzles[0].groups});diagnosticHistory=diagnosticHistory.slice(-150);try{localStorage.setItem(historyKey,JSON.stringify(diagnosticHistory));}catch(_){}for(const g of puzzles[0].groups)recentGroups.push({date:chunk[0],name:String(g.name||''),signature:g.words.map(w=>String(w).trim().toLocaleLowerCase('sv-SE')).sort().join('¦')});}
    if(diagnostic){if(rows.length){previewItems.push({date:chunk[0],result:{puzzle:puzzles[0],stage:(Number(data.quality_score)>=65?'Granskningskandidat':'Tekniskt giltig · manuell granskning krävs')+' · kvalitet '+(data.quality_score??'–')+'/100 · treordsfällor '+(data.triple_matches??0),review:data.review,difficulty:data.difficulty}});renderPreview();}continue;}
    if(rows.length){
